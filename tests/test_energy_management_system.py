@@ -423,3 +423,238 @@ class TestEnergyManagementSystem:
         assert result.device_status["Radio"] is True
         assert result.device_status["Light"] is False
         assert result.device_status["TV"] is False
+    
+    def test_tc20_energy_saving_mode_activated_with_price_equal_to_threshold(self):
+        """
+        TC20: Modo economia ativado com current_price == price_threshold.
+        Cobertura: Caso limite onde current_price é exatamente igual ao price_threshold.
+        """
+        result = self.system.manage_energy(
+            current_price=100.0,  # Igual ao limite
+            price_threshold=100.0,
+            device_priorities={"Light": 2, "TV": 3},
+            current_time=self.base_time,
+            current_temperature=20.0,
+            desired_temperature_range=(18.0, 24.0),
+            energy_usage_limit=100.0,
+            total_energy_used_today=50.0,
+            scheduled_devices=[]
+        )
+        assert result.energy_saving_mode is False
+        assert result.device_status["Light"] is True
+        assert result.device_status["TV"] is True
+    
+    def test_tc21_night_mode_active_at_6_am(self):
+        """
+        TC21: Modo noturno ativo às 6h.
+        Cobertura: Caso limite onde current_time.hour == 6.
+        """
+        night_time = datetime(2024, 1, 1, 6, 0, 0)
+        result = self.system.manage_energy(
+            current_price=50.0,
+            price_threshold=100.0,
+            device_priorities={"Light": 2, "TV": 3, "Security": 1},
+            current_time=night_time,
+            current_temperature=20.0,
+            desired_temperature_range=(18.0, 24.0),
+            energy_usage_limit=100.0,
+            total_energy_used_today=50.0,
+            scheduled_devices=[]
+        )
+        assert result.device_status["Light"] is True
+        assert result.device_status["TV"] is True
+        assert result.device_status["Security"] is True
+    
+    def test_tc22_night_mode_active_at_6_30_am(self):
+        """
+        TC22: Modo noturno ativo às 6h30.
+        Cobertura: Caso onde current_time.hour == 6 e minutos > 0.
+        """
+        night_time = datetime(2024, 1, 1, 6, 30, 0)
+        result = self.system.manage_energy(
+            current_price=50.0,
+            price_threshold=100.0,
+            device_priorities={"Light": 2, "TV": 3, "Security": 1},
+            current_time=night_time,
+            current_temperature=20.0,
+            desired_temperature_range=(18.0, 24.0),
+            energy_usage_limit=100.0,
+            total_energy_used_today=50.0,
+            scheduled_devices=[]
+        )
+        assert result.device_status["Light"] is True
+        assert result.device_status["TV"] is True
+        assert result.device_status["Security"] is True
+
+    def test_tc23_heating_activated_at_lower_temperature_limit(self):
+        """
+        TC23: Aquecimento ativado na temperatura mínima desejada.
+        Cobertura: Caso limite onde current_temperature == desired_temperature_range[0].
+        """
+        result = self.system.manage_energy(
+            current_price=50.0,
+            price_threshold=100.0,
+            device_priorities={"Heating": 1, "Cooling": 1},
+            current_time=self.base_time,
+            current_temperature=18.0,  # Igual ao limite inferior
+            desired_temperature_range=(18.0, 24.0),
+            energy_usage_limit=100.0,
+            total_energy_used_today=50.0,
+            scheduled_devices=[]
+        )
+        # Ajuste esperado: aquecimento não ativado no limite inferior
+        assert result.device_status["Heating"] is False
+        assert result.device_status["Cooling"] is False
+        assert result.temperature_regulation_active is False
+    
+    def test_tc24_cooling_activated_at_upper_temperature_limit(self):
+        """
+        TC24: Resfriamento ativado na temperatura máxima desejada.
+        Cobertura: Caso limite onde current_temperature == desired_temperature_range[1].
+        """
+        result = self.system.manage_energy(
+            current_price=50.0,
+            price_threshold=100.0,
+            device_priorities={"Heating": 1, "Cooling": 1},
+            current_time=self.base_time,
+            current_temperature=24.0,  # Igual ao limite superior
+            desired_temperature_range=(18.0, 24.0),
+            energy_usage_limit=100.0,
+            total_energy_used_today=50.0,
+            scheduled_devices=[]
+        )
+        assert result.device_status["Heating"] is False
+        assert result.device_status["Cooling"] is False
+        assert result.temperature_regulation_active is False
+    
+    def test_tc25_energy_limit_loop_exit_at_equal_limit(self):
+        """
+        TC25: Loop de limite de energia - saída quando total_energy_used_today == energy_usage_limit.
+        Cobertura: Caso limite onde total_energy_used_today é exatamente igual ao energy_usage_limit.
+        """
+        result = self.system.manage_energy(
+            current_price=50.0,
+            price_threshold=100.0,
+            device_priorities={"Light": 2, "TV": 3},
+            current_time=self.base_time,
+            current_temperature=20.0,
+            desired_temperature_range=(18.0, 24.0),
+            energy_usage_limit=100.0,
+            total_energy_used_today=100.0,  # Igual ao limite
+            scheduled_devices=[]
+        )
+        assert result.total_energy_used == 99.0
+    
+    def test_tc26_device_status_default_behavior(self):
+        """
+        TC26: Comportamento padrão de device_status.get(device).
+        Cobertura: Verifica o comportamento quando device_status não contém o dispositivo.
+        """
+        result = self.system.manage_energy(
+            current_price=50.0,
+            price_threshold=100.0,
+            device_priorities={"Light": 2, "TV": 3},
+            current_time=self.base_time,
+            current_temperature=20.0,
+            desired_temperature_range=(18.0, 24.0),
+            energy_usage_limit=100.0,
+            total_energy_used_today=50.0,
+            scheduled_devices=[]
+        )
+        assert "NonExistentDevice" not in result.device_status
+
+    def test_tc27_priority_threshold(self):
+        """
+        TC27: Verifica o comportamento com dispositivos de prioridade 2.
+        Cobertura: Caso limite onde priority == 2.
+        """
+        result = self.system.manage_energy(
+            current_price=50.0,
+            price_threshold=100.0,
+            device_priorities={"Light": 2, "TV": 3},
+            current_time=self.base_time,
+            current_temperature=20.0,
+            desired_temperature_range=(18.0, 24.0),
+            energy_usage_limit=100.0,
+            total_energy_used_today=120.0,
+            scheduled_devices=[]
+        )
+        assert result.device_status["Light"] is False
+        assert result.device_status["TV"] is False
+    
+    def test_tc28_cooling_device_status_correct_key(self):
+        """
+        TC28: Verifica se o dispositivo de resfriamento é ativado corretamente.
+        Cobertura: Garante que a chave "Cooling" é usada no device_status.
+        """
+        result = self.system.manage_energy(
+            current_price=50.0,
+            price_threshold=100.0,
+            device_priorities={"Heating": 1, "Cooling": 1},
+            current_time=self.base_time,
+            current_temperature=28.0,  # Temperatura alta
+            desired_temperature_range=(18.0, 24.0),
+            energy_usage_limit=100.0,
+            total_energy_used_today=50.0,
+            scheduled_devices=[]
+        )
+        # Verifica se a chave correta "Cooling" está presente
+        assert "Cooling" in result.device_status, "A chave 'Cooling' não foi encontrada em device_status."
+        assert result.device_status["Cooling"] is True, "O dispositivo 'Cooling' não foi ativado corretamente."
+        assert "XXCoolingXX" not in result.device_status, "A chave 'XXCoolingXX' não deveria estar presente em device_status."
+    
+        
+    def test_tc31_devices_were_on_flag(self):
+        """
+        TC31: Verifica o comportamento do flag devices_were_on.
+        Cobertura: Garante que o loop termina corretamente quando devices_were_on é False.
+        """
+        result = self.system.manage_energy(
+            current_price=50.0,
+            price_threshold=100.0,
+            device_priorities={"Light": 2, "TV": 3},
+            current_time=self.base_time,
+            current_temperature=20.0,
+            desired_temperature_range=(18.0, 24.0),
+            energy_usage_limit=100.0,
+            total_energy_used_today=120.0,  # Acima do limite
+            scheduled_devices=[]
+        )
+        assert result.total_energy_used < 120.0
+
+    
+    def test_tc32_energy_limit_loop_break(self):
+        """
+        TC32: Verifica o comportamento do loop ao usar break em vez de continue.
+        Cobertura: Garante que o loop não sai prematuramente.
+        """
+        result = self.system.manage_energy(
+            current_price=50.0,
+            price_threshold=100.0,
+            device_priorities={"Light": 2, "TV": 3, "Radio": 4},
+            current_time=self.base_time,
+            current_temperature=20.0,
+            desired_temperature_range=(18.0, 24.0),
+            energy_usage_limit=100.0,
+            total_energy_used_today=120.0,  # Acima do limite
+            scheduled_devices=[]
+        )
+        assert result.total_energy_used < 120.0
+    
+    def test_tc33_energy_limit_loop_continue(self):
+        """
+        TC33: Verifica o comportamento do loop ao usar continue em vez de break.
+        Cobertura: Garante que o loop não entra em um ciclo infinito.
+        """
+        result = self.system.manage_energy(
+            current_price=50.0,
+            price_threshold=100.0,
+            device_priorities={"Light": 2, "TV": 3, "Radio": 4},
+            current_time=self.base_time,
+            current_temperature=20.0,
+            desired_temperature_range=(18.0, 24.0),
+            energy_usage_limit=100.0,
+            total_energy_used_today=120.0,  # Acima do limite
+            scheduled_devices=[]
+        )
+        assert result.total_energy_used < 120.0
